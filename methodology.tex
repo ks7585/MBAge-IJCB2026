@@ -1,0 +1,208 @@
+% =============================================================================
+% IJCB 2026 MBAge Challenge — 1st Place Methodology Submission
+% Karthik Sivarama Krishnan & Koushik Sivarama Krishnan
+% One-page methodology document. Compile on Overleaf with pdflatex.
+% =============================================================================
+\documentclass[9pt,letterpaper]{extarticle}
+
+% --- Layout ---------------------------------------------------------------
+\usepackage[letterpaper,top=0.4in,bottom=0.4in,left=0.55in,right=0.55in]{geometry}
+\usepackage[parfill]{parskip}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{2pt plus 1pt minus 0.5pt}
+
+% --- Typography -----------------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{microtype}
+
+% --- Math & symbols -------------------------------------------------------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+
+% --- Tables, color, links -------------------------------------------------
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,urlcolor=blue!60!black,linkcolor=blue!60!black]{hyperref}
+\usepackage{colortbl}
+
+% --- Section headings -----------------------------------------------------
+\usepackage[compact]{titlesec}
+\titleformat{\section}{\small\bfseries\color{navyblue}}{}{0pt}{}
+\titlespacing*{\section}{0pt}{2pt plus 0.5pt}{0pt}
+
+% --- Color palette --------------------------------------------------------
+\definecolor{navyblue}{HTML}{1A3461}
+\definecolor{tablehead}{HTML}{1A3461}
+\definecolor{tablerow}{HTML}{F4F6F9}
+\definecolor{tablehighlight}{HTML}{FFF3CD}
+\definecolor{codebg}{HTML}{F3F4F7}
+\definecolor{captiongray}{HTML}{3A4452}
+
+% --- Custom command for code-style boxed math ----------------------------
+\newcommand{\codebox}[1]{%
+  \begin{center}
+  \colorbox{codebg}{\parbox{0.92\linewidth}{\centering\small #1}}
+  \end{center}}
+
+% --- Suppress page numbers (single-page document) ------------------------
+\pagestyle{empty}
+
+% =============================================================================
+\begin{document}
+
+% --- Title block ----------------------------------------------------------
+\begin{center}
+{\normalsize\bfseries\color{navyblue}
+A Hierarchical Multimodal Ensemble with FiLM-Conditioned Fusion\\
+for Tongue and Face Age Estimation}\\[2pt]
+{\footnotesize\color{captiongray}
+1st Place Solution \,\textperiodcentered\, IJCB 2026 MBAge Challenge
+(CodaBench Competition \#15116)}\\[4pt]
+{\small\bfseries
+Karthik Sivarama Krishnan$^{1}$ \,\textperiodcentered\, Koushik Sivarama Krishnan$^{2}$}\\[1pt]
+{\footnotesize\itshape
+$^{1,2}$Independent Researcher \,|\, contact via competition email}
+\end{center}
+
+% --- Abstract -------------------------------------------------------------
+\section*{Abstract}
+We present the winning solution to the IJCB 2026 MBAge challenge, in which we
+achieved first place on the final combined leaderboard ($S_{\mathrm{final}}=0.4129$)
+with the top Phase~2 score of $S_{2}=0.4396$. Our approach treats age estimation
+as a structured prediction problem and combines three complementary deep models
+trained on pre-extracted tongue (four CNN backbones) and face (Gabor magnitude
+banks) features: a hierarchical decade-then-fine Deep Label Distribution Learning
+(DLDL) model, a feature-engineered dual-backbone model incorporating fourteen
+statistical and attention-based descriptors, and a Feature-wise Linear Modulation
+(FiLM) ensemble that median-aggregates six seed-varied face-conditioned
+predictors. A weighted ensemble of the three components, with weights refined
+by a 114-candidate grid search constrained to out-of-fold non-regression, yielded
+our final submission. Code, predictions, and reproducibility artifacts are
+publicly released.
+
+% --- Method ---------------------------------------------------------------
+\section*{Method}
+\textbf{Hierarchical decade-routed DLDL (40\% weight).}
+The first component decomposes regression into a five-way decade classification
+(20s--60s) followed by ten-bin within-decade Deep Label Distribution
+Learning~[1]. A shared three-layer MLP trunk (256 hidden units,
+GELU, LayerNorm, dropout 0.3) processes global-average-pooled features from four
+CNN backbones (ResNet18, MobileNetV2, EfficientNetB0, DenseNet121) concatenated
+with Gabor face features (cheek and chin banks B/C/D, each 40-D). Predictions
+follow soft hierarchical routing,
+\[
+\hat{y} \;=\; \sum_{d=1}^{5} P(d)\!\left(\mathrm{start}_d + \sum_{k=0}^{9} P(k\mid d)\cdot k\right).
+\]
+Training combines decade cross-entropy, within-decade KL divergence against
+Gaussian soft labels ($\sigma$ annealed $2.0\!\rightarrow\!0.5$), $L_1$
+regression, and Wing loss~[2], optimized with AdamW under
+ten-fold stratified cross-validation (200 epochs, patience 30).
+
+\textbf{Feature-engineered dual-backbone model (42.5\% weight).}
+The second component is a DenseNet121 + ResNet18 dual-backbone hierarchical
+model (hidden dim 384, dropout 0.35) augmented with all fourteen of the
+following: pre-pool LayerNorm; standard-deviation and $2\!\times\!2$ grid
+pooling; discrete-cosine and Haar wavelet projections; higher-order and spatial
+moments; Gabor-bank marginals and cross-bank asymmetry; iterative-square-root
+covariance pooling~[3] (reduce-dim 32); Compact Bilinear
+Pooling~[4] (dim 1024); mutual-information channel selection
+(top-64); Efficient Channel Attention~[5]; CKA-based backbone
+de-duplication; learned-query attention pooling; confidence-weighted late fusion;
+and the Multi-Modal Transfer Module (MMTM)~[6] for cross-backbone
+fusion.
+
+\textbf{FiLM-conditioned median ensemble (17.5\% weight).}
+The third component is a seven-model median over six Feature-wise Linear
+Modulation~[7] transformers
+($d_{\text{model}}\!=\!128$, four heads, two layers, triple-head decoder
+combining DLDL, regression, and ordinal predictions) trained with seeds
+$\{0,1,2,3,4,42\}$, plus the hierarchical model. FiLM projects face features
+into per-channel affine parameters $\gamma,\beta$ that modulate the tongue
+representation. Median aggregation is robust to single-seed outliers and reduces
+prediction variance relative to arithmetic averaging.
+
+\textbf{Final blend.}
+Component predictions were combined as a weighted average and clipped to the
+valid age range:
+\codebox{$\displaystyle \hat{y}\;=\;\mathrm{clip}\bigl(0.400\,\hat{y}_{\text{hier}}
++ 0.425\,\hat{y}_{\text{s12}} + 0.175\,\hat{y}_{\text{film6}},\;\,20,\;\,69\bigr).$}
+Weights were selected by exhaustive grid search at 0.025 resolution over the
+ternary simplex (114 candidate combinations), retaining the smallest deviation
+from the reference (40/40/20) weighting that yielded a positive out-of-fold
+jittered $S$ delta with no negative per-metric component. The refinement
+contributed $+0.00022$ to the final leaderboard score over the equal-weight
+reference, validating the proven blend structure as a tight local optimum.
+
+% --- Results --------------------------------------------------------------
+\section*{Results}
+\begin{table}[h!]
+\vspace{-4pt}
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.05}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+\rowcolor{tablehead}
+\textcolor{white}{\textbf{Configuration}} &
+\textcolor{white}{\textbf{Rank}} &
+\textcolor{white}{\textbf{S}} &
+\textcolor{white}{\textbf{MSE}} &
+\textcolor{white}{\textbf{1Y-ACC}} &
+\textcolor{white}{\textbf{5Y-ACC}} &
+\textcolor{white}{\textbf{10Y-ACC}} \\
+\midrule
+\rowcolor{tablerow}
+Phase 1 (tongue only)        & 2nd & 0.3727 & 97.17 & 0.16 & 0.53 & 0.74 \\
+Phase 2 (tongue + face)      & \textbf{1st} & \textbf{0.4396} & \textbf{46.92} & \textbf{0.176} & \textbf{0.648} & \textbf{0.864} \\
+\rowcolor{tablehighlight}
+\textbf{Combined} ($0.4\,S_1 + 0.6\,S_2$) & \textbf{1st} & \textbf{0.4129} & --- & --- & --- & --- \\
+\bottomrule
+\end{tabular}\\[3pt]
+{\footnotesize\color{captiongray}\textbf{Table~1.} Final CodaBench leaderboard
+metrics. The competition score is computed as
+$S = 0.1/(1+\mathrm{MSE}) + 0.4\,\mathrm{ACC}_{1\mathrm{Y}}
++ 0.3\,\mathrm{ACC}_{5\mathrm{Y}} + 0.2\,\mathrm{ACC}_{10\mathrm{Y}}$.
+Our team (ks7585) won Phase 2 outright and the combined ranking by a margin
+of $+0.0027$ over the second-place team.}
+\end{table}
+
+% --- Reproducibility ------------------------------------------------------
+\section*{Reproducibility and Code Availability}
+All eight component models were trained on a single NVIDIA RTX 5070 (12\,GB)
+using PyTorch 2.11.0+cu128 and Python 3.12, in a total wall-clock time of
+approximately 3.5\,hours. Reproducibility was verified by retraining the
+hierarchical model from scratch on different hardware and observing
+byte-identical out-of-fold predictions to the original training run
+(MD5 \texttt{9ee818c7a9557ea0852ff9634bd62227}), confirming full determinism
+of the recipe under fixed random seeds. The complete code base, including all
+training scripts, out-of-fold predictions, the final submission file, and
+step-by-step reproduction instructions, is released at
+\href{https://github.com/ks7585/MBAge-IJCB2026}{\nolinkurl{github.com/ks7585/MBAge-IJCB2026}}
+(MIT License).
+
+% --- References -----------------------------------------------------------
+\section*{Key References}
+\begin{footnotesize}
+\setlength{\parskip}{0pt}
+\noindent
+[1]~B.-B.~Gao \emph{et al.}, ``Deep Label Distribution Learning with Label
+Ambiguity,'' \emph{IEEE Trans. Image Processing}, 26(6):2825--2838, 2017.\;
+[2]~Z.-H.~Feng \emph{et al.}, ``Wing Loss for Robust Facial Landmark
+Localisation,'' \emph{CVPR}, 2018.\;
+[3]~P.~Li \emph{et al.}, ``Towards Faster Training of Global Covariance Pooling
+Networks by Iterative Matrix Square Root Normalization,'' \emph{CVPR}, 2018.\;
+[4]~Y.~Gao \emph{et al.}, ``Compact Bilinear Pooling,'' \emph{CVPR}, 2016.\;
+[5]~Q.~Wang \emph{et al.}, ``ECA-Net: Efficient Channel Attention for Deep
+Convolutional Neural Networks,'' \emph{CVPR}, 2020.\;
+[6]~H.~R.~V.~Joze \emph{et al.}, ``MMTM: Multimodal Transfer Module for CNN
+Fusion,'' \emph{CVPR}, 2020.\;
+[7]~E.~Perez \emph{et al.}, ``FiLM: Visual Reasoning with a General Conditioning
+Layer,'' \emph{AAAI}, 2018.
+\end{footnotesize}
+
+\end{document}

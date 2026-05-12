@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pkl
+data/
+checkpoints/
+*.log
+.venv/
+venv/
+.DS_Store
+*.swp
